@@ -2,7 +2,9 @@ package aws
 
 import (
 	"fmt"
+	"log"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -106,9 +108,20 @@ func resourceAwsAppCookieStickinessPolicyRead(d *schema.ResourceData, meta inter
 		}
 		return fmt.Errorf("Error retrieving policy: %s", err)
 	}
-
 	if len(getResp.PolicyDescriptions) != 1 {
 		return fmt.Errorf("Unable to find policy %#v", getResp.PolicyDescriptions)
+	}
+
+	// we know the policyt exists now, but we have to check if it's assigned to a listner
+	enabled, err := resourceAwsELBSticknessPolicyEnabled(policyName, lbName, lbPort, meta)
+	if err != nil {
+		return err
+	}
+	if !enabled {
+		// policy exists, but isn't assigned to a listener
+		log.Printf("[DEBUG] policy '%s' exists, but isn't assigned to a listener", policyName)
+		d.SetId("")
+		return nil
 	}
 
 	// We can get away with this because there's only one attribute, the
@@ -125,6 +138,45 @@ func resourceAwsAppCookieStickinessPolicyRead(d *schema.ResourceData, meta inter
 	d.Set("lb_port", lbPort)
 
 	return nil
+}
+
+// Determine if a particular policy is enabled on an ELB listener
+func resourceAwsELBSticknessPolicyEnabled(policyName, lbName, lbPort string, meta interface{}) (bool, error) {
+	elbconn := meta.(*AWSClient).elbconn
+
+	describeElbOpts := &elb.DescribeLoadBalancersInput{
+		LoadBalancerNames: []*string{aws.String(lbName)},
+	}
+	describeResp, err := elbconn.DescribeLoadBalancers(describeElbOpts)
+	if err != nil {
+		if ec2err, ok := err.(awserr.Error); ok {
+			if ec2err.Code() == "LoadBalancerNotFound" {
+				return false, nil
+			}
+		}
+		return false, fmt.Errorf("Error retrieving ELB description: %s", err)
+	}
+
+	if len(describeResp.LoadBalancerDescriptions) != 1 {
+		return false, fmt.Errorf("Unable to find ELB: %#v", describeResp.LoadBalancerDescriptions)
+	}
+
+	lb := describeResp.LoadBalancerDescriptions[0]
+	enabled := false
+	for _, listener := range lb.ListenerDescriptions {
+		if lbPort != strconv.Itoa(int(*listener.Listener.LoadBalancerPort)) {
+			continue
+		}
+
+		for _, name := range listener.PolicyNames {
+			if policyName == *name {
+				enabled = true
+				break
+			}
+		}
+	}
+
+	return enabled, nil
 }
 
 func resourceAwsAppCookieStickinessPolicyDelete(d *schema.ResourceData, meta interface{}) error {
