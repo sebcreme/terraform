@@ -506,6 +506,20 @@ func resourceAwsAmiCommonSchema(computed bool) map[string]*schema.Schema {
 			},
 		},
 
+		"encrypted": &schema.Schema{
+			Type:     schema.TypeBool,
+			Optional: true,
+			Computed: true,
+			ForceNew: true,
+		},
+
+		"kms_key_id": &schema.Schema{
+			Type:     schema.TypeString,
+			Optional: true,
+			Computed: true,
+			ForceNew: true,
+		},
+
 		"tags": tagsSchema(),
 
 		// Not a public attribute; used to let the aws_ami_copy and aws_ami_from_instance

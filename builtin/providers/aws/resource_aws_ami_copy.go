@@ -47,6 +47,14 @@ func resourceAwsAmiCopyCreate(d *schema.ResourceData, meta interface{}) error {
 		SourceRegion:  aws.String(d.Get("source_ami_region").(string)),
 	}
 
+	if v, ok := d.GetOk("encypted"); ok {
+		req.Encrypted = aws.Bool(v.(bool))
+	}
+
+	if v, ok := d.GetOk("kms_key_id"); ok {
+		req.KmsKeyId = aws.String(v.(string))
+	}
+
 	res, err := client.CopyImage(req)
 	if err != nil {
 		return err
